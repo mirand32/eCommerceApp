@@ -1,4 +1,7 @@
 const fs = require("fs")
+const crypto=require("crypto")
+const util=require("util")
+const scrypt=util.promisify(crypto.scrypt)
 
 class UsersRepository {
     constructor(filename){
@@ -39,11 +42,38 @@ class UsersRepository {
     }
     
     create= async(attrs)=>{
+        const salt = crypto.randomBytes(8).toString("hex")
+        const buf= await scrypt(attrs.password, salt, 64)
         const records=await this.getAll()
-        if(!records.some(rec=>rec.email===attrs.email)){
-            attrs.id=Math.floor(Math.random()*Date.now())
-            records.push(attrs)
-            await this.writeAll(records)
+        attrs.id=Math.floor(Math.random()*Date.now())
+        const record={
+            ...attrs,
+            password:`${buf.toString('hex')}.${salt}`
+        }
+        records.push(record)
+        await this.writeAll(records)
+        return attrs
+    }
+
+    comparePasswords=async(saved,supplied)=>{
+        const {hashed,salt}=saved.split(".")
+        const buf=await scrypt(supplied, salt, 64)
+        return buf.toString("hex")===hashed
+    }
+
+    authenticate=async({email,password})=>{
+        const records=await this.getAll()
+        const record=await this.getOneBy({email})
+        const cryptPassword=record.password
+        const salt=cryptPassword.split(".")[1]
+        const buf=await scrypt(password, salt, 64)
+        const decryptedPassword=`${buf.toString('hex')}.${salt}`
+        if(decryptedPassword===cryptPassword){
+            console.log("true")
+            return record
+        }else{
+            console.log("false")
+            return false
         }
     }
     
